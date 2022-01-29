@@ -245,6 +245,7 @@ fuzz-build:
 		-e FUZZING_LANGUAGE=go -e SANITIZER=address \
 		-e CIFUZZ_DEBUG='True' -e OSS_FUZZ_PROJECT_NAME=fluxcd \
 		-v "$(shell pwd)/build/fuzz/out":/out \
+		-e PKG_CONFIG_PATH="/root/go/src/github.com/fluxcd/source-controller/build/libgit2/libgit2-1.1.1-4/lib/pkgconfig:/root/go/src/github.com/fluxcd/source-controller/build/libgit2/libgit2-1.1.1-4/lib64/pkgconfig"
 		local-fuzzing:latest
 
 fuzz-smoketest: fuzz-build

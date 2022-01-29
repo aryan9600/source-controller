@@ -34,7 +34,7 @@ pushd "${PROJECT_PATH}/tests/fuzz"
 mkdir -p testdata/crd
 cp ../../config/crd/bases/*.yaml testdata/crd
 
-go mod tidy
+go mod tidy -go=1.16 && go mod tidy -go=1.17
 
 compile_go_fuzzer "${PROJECT_PATH}/tests/fuzz/" FuzzRandomGitFiles fuzz_random_git_files
 compile_go_fuzzer "${PROJECT_PATH}/tests/fuzz/" FuzzGitResourceObject fuzz_git_resource_object
