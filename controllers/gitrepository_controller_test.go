@@ -50,7 +50,7 @@ import (
 	"github.com/fluxcd/pkg/gittestserver"
 	"github.com/fluxcd/pkg/untar"
 
-	sourcev1 "github.com/fluxcd/source-controller/api/v1beta1"
+	sourcev1 "github.com/aryan9600/source-controller/api/v1beta1"
 )
 
 var _ = Describe("GitRepositoryReconciler", func() {

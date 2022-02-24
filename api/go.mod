@@ -1,4 +1,4 @@
-module github.com/fluxcd/source-controller/api
+module github.com/aryan9600/source-controller/api
 
 go 1.17
 

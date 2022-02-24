@@ -35,7 +35,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 
-	"github.com/fluxcd/source-controller/pkg/git"
+	"github.com/aryan9600/source-controller/pkg/git"
 )
 
 var (

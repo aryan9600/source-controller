@@ -31,10 +31,10 @@ import (
 	"github.com/fluxcd/pkg/gittestserver"
 	. "github.com/onsi/gomega"
 
-	"github.com/fluxcd/source-controller/pkg/git"
-	"github.com/fluxcd/source-controller/pkg/git/gogit"
-	"github.com/fluxcd/source-controller/pkg/git/libgit2"
-	"github.com/fluxcd/source-controller/pkg/git/strategy"
+	"github.com/aryan9600/source-controller/pkg/git"
+	"github.com/aryan9600/source-controller/pkg/git/gogit"
+	"github.com/aryan9600/source-controller/pkg/git/libgit2"
+	"github.com/aryan9600/source-controller/pkg/git/strategy"
 )
 
 // These tests are run in a different _test.go file because go-git uses the ProxyFromEnvironment function of the net/http package
@@ -196,7 +196,7 @@ func TestCheckoutStrategyForImplementation_Proxied(t *testing.T) {
 				proxy.OnRequest().HandleConnect(proxyHandler)
 
 				// go-git does not allow to use an HTTPS proxy and a custom root CA at the same time.
-				// See https://github.com/fluxcd/source-controller/pull/524#issuecomment-1006673163.
+				// See https://github.com/aryan9600/source-controller/pull/524#issuecomment-1006673163.
 				return nil, func() {}
 			},
 			shortTimeout:  false,

@@ -26,7 +26,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fluxcd/source-controller/internal/helm"
+	"github.com/aryan9600/source-controller/internal/helm"
 	. "github.com/onsi/gomega"
 	"helm.sh/helm/v3/pkg/chart"
 	helmgetter "helm.sh/helm/v3/pkg/getter"

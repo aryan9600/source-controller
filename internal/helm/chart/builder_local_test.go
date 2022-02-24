@@ -30,7 +30,7 @@ import (
 	"helm.sh/helm/v3/pkg/chartutil"
 	"helm.sh/helm/v3/pkg/repo"
 
-	"github.com/fluxcd/source-controller/internal/helm/repository"
+	"github.com/aryan9600/source-controller/internal/helm/repository"
 )
 
 func TestLocalBuilder_Build(t *testing.T) {

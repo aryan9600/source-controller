@@ -1,8 +1,8 @@
-module github.com/fluxcd/source-controller
+module github.com/aryan9600/source-controller
 
 go 1.17
 
-replace github.com/fluxcd/source-controller/api => ./api
+replace github.com/aryan9600/source-controller/api => ./api
 
 require (
 	cloud.google.com/go/storage v1.16.0
@@ -19,7 +19,7 @@ require (
 	github.com/fluxcd/pkg/ssh v0.2.0
 	github.com/fluxcd/pkg/untar v0.1.0
 	github.com/fluxcd/pkg/version v0.1.0
-	github.com/fluxcd/source-controller/api v0.21.1
+	github.com/aryan9600/source-controller/api v0.21.1
 	github.com/go-git/go-billy/v5 v5.3.1
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/go-logr/logr v1.2.2

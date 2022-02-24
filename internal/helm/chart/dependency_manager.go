@@ -32,7 +32,7 @@ import (
 	helmchart "helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chart/loader"
 
-	"github.com/fluxcd/source-controller/internal/helm/repository"
+	"github.com/aryan9600/source-controller/internal/helm/repository"
 )
 
 // GetChartRepositoryCallback must return a repository.ChartRepository for the

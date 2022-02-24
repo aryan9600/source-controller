@@ -16,7 +16,7 @@ limitations under the License.
 
 package libgit2
 
-import "github.com/fluxcd/source-controller/pkg/git"
+import "github.com/aryan9600/source-controller/pkg/git"
 
 const (
 	Implementation git.Implementation = "libgit2"
