@@ -105,12 +105,16 @@ type GitRepositoryReconciler struct {
 	Storage        *Storage
 	ControllerName string
 
-	requeueDependency time.Duration
+	requeueDependency        time.Duration
+	artifactRetentionTTL     time.Duration
+	artifactRetentionRecords int
 }
 
 type GitRepositoryReconcilerOptions struct {
 	MaxConcurrentReconciles   int
 	DependencyRequeueInterval time.Duration
+	ArtifactRetentionTTL      time.Duration
+	ArtifactRetentionRecords  int
 }
 
 // gitRepositoryReconcileFunc is the function type for all the
@@ -123,6 +127,8 @@ func (r *GitRepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *GitRepositoryReconciler) SetupWithManagerAndOptions(mgr ctrl.Manager, opts GitRepositoryReconcilerOptions) error {
 	r.requeueDependency = opts.DependencyRequeueInterval
+	r.artifactRetentionRecords = opts.ArtifactRetentionRecords
+	r.artifactRetentionTTL = opts.ArtifactRetentionTTL
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&sourcev1.GitRepository{}, builder.WithPredicates(
@@ -708,13 +714,16 @@ func (r *GitRepositoryReconciler) garbageCollect(ctx context.Context, obj *sourc
 		return nil
 	}
 	if obj.GetArtifact() != nil {
-		if deleted, err := r.Storage.RemoveAllButCurrent(*obj.GetArtifact()); err != nil {
+		deleted, err := r.Storage.RemoveGarbageFiles(*obj.GetArtifact(), r.artifactRetentionRecords, r.artifactRetentionTTL)
+		if err != nil {
 			return &serror.Event{
-				Err: fmt.Errorf("garbage collection of old artifacts failed: %w", err),
+				Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
+				Reason: "GarbageCollectionFailed",
 			}
-		} else if len(deleted) > 0 {
+		}
+		if len(deleted) > 0 {
 			r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
-				"garbage collected old artifacts")
+				fmt.Sprintf("garbage collected %d old artifacts", len(deleted)))
 		}
 	}
 	return nil

@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -143,6 +144,84 @@ func (s *Storage) RemoveAllButCurrent(artifact sourcev1.Artifact) ([]string, err
 		return deletedFiles, fmt.Errorf("failed to remove files: %s", strings.Join(errors, " "))
 	}
 	return deletedFiles, nil
+}
+
+func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Duration) []string {
+	localPath := s.LocalPath(artifact)
+	dir := filepath.Dir(localPath)
+	garbageFiles := []string{}
+	filesWithCreatedTs := make(map[time.Time]string)
+	// sortedPaths contain all files sorted according to their created ts.
+	sortedPaths := []string{}
+	now := time.Now().UTC()
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		createdAt := info.ModTime().UTC()
+		diff := now.Sub(createdAt)
+		// compare the time difference between now and the time at which the file was created
+		// with the provided ttl. delete if difference is greater than the ttl.
+		expired := diff > ttl
+		if path != localPath && !info.IsDir() && info.Mode()&os.ModeSymlink != os.ModeSymlink && expired {
+			garbageFiles = append(garbageFiles, path)
+		}
+		if !info.IsDir() && info.Mode()&os.ModeSymlink != os.ModeSymlink {
+			filesWithCreatedTs[info.ModTime().UTC()] = path
+		}
+		return nil
+	})
+	creationTimestamps := []time.Time{}
+	for ts := range filesWithCreatedTs {
+		creationTimestamps = append(creationTimestamps, ts)
+	}
+	// sort all timestamps in an ascending order.
+	sort.Slice(creationTimestamps, func(i, j int) bool { return creationTimestamps[i].Before(creationTimestamps[j]) })
+	for _, ts := range creationTimestamps {
+		path, ok := filesWithCreatedTs[ts]
+		if !ok {
+			return nil
+		}
+		sortedPaths = append(sortedPaths, path)
+	}
+
+	for i, path := range sortedPaths {
+		if path != localPath && !stringInSlice(path, garbageFiles) && len(sortedPaths) <= n {
+			// append path to garbageFiles and remove it from sortedPaths
+			garbageFiles = append(garbageFiles, path)
+			sortedPaths = append(sortedPaths[:i], sortedPaths[i+1:]...)
+		}
+	}
+
+	return garbageFiles
+}
+
+// RemoveGarbageFiles removes all garabge files in the artifact dir according to the provided
+// retention options.
+func (s *Storage) RemoveGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Duration) ([]string, error) {
+	garbageFiles := s.getGarbageFiles(artifact, n, ttl)
+	var errors []string
+	var deleted []string
+	if len(garbageFiles) > 0 {
+		for _, file := range garbageFiles {
+			err := os.Remove(file)
+			if err != nil {
+				errors = append(errors, err.Error())
+			} else {
+				deleted = append(deleted, file)
+			}
+		}
+	}
+	if len(errors) > 0 {
+		return deleted, fmt.Errorf("failed to remove files: %s", strings.Join(errors, " "))
+	}
+	return deleted, nil
+}
+
+func stringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }
 
 // ArtifactExist returns a boolean indicating whether the v1beta1.Artifact exists in storage and is a regular file.

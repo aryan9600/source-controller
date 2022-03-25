@@ -72,24 +72,26 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr            string
-		eventsAddr             string
-		healthAddr             string
-		storagePath            string
-		storageAddr            string
-		storageAdvAddr         string
-		concurrent             int
-		requeueDependency      time.Duration
-		watchAllNamespaces     bool
-		helmIndexLimit         int64
-		helmChartLimit         int64
-		helmChartFileLimit     int64
-		clientOptions          client.Options
-		logOptions             logger.Options
-		leaderElectionOptions  leaderelection.Options
-		helmCacheMaxSize       int
-		helmCacheTTL           string
-		helmCachePurgeInterval string
+		metricsAddr              string
+		eventsAddr               string
+		healthAddr               string
+		storagePath              string
+		storageAddr              string
+		storageAdvAddr           string
+		concurrent               int
+		requeueDependency        time.Duration
+		watchAllNamespaces       bool
+		helmIndexLimit           int64
+		helmChartLimit           int64
+		helmChartFileLimit       int64
+		clientOptions            client.Options
+		logOptions               logger.Options
+		leaderElectionOptions    leaderelection.Options
+		helmCacheMaxSize         int
+		helmCacheTTL             string
+		helmCachePurgeInterval   string
+		artifactRetentionTTL     time.Duration
+		artifactRetentionRecords int
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-addr", envOrDefault("METRICS_ADDR", ":8080"),
@@ -120,6 +122,10 @@ func main() {
 		"The TTL of an index in the cache. Valid time units are ns, us (or µs), ms, s, m, h.")
 	flag.StringVar(&helmCachePurgeInterval, "helm-cache-purge-interval", "1m",
 		"The interval at which the cache is purged. Valid time units are ns, us (or µs), ms, s, m, h.")
+	flag.DurationVar(&artifactRetentionTTL, "artifact-retention-ttl", 30*time.Second,
+		"The duration for which artifacts be persisted in storage before being evicted.")
+	flag.IntVar(&artifactRetentionRecords, "artifact-retention-records", 2,
+		"The number of artifacts allowed to be present in storage.")
 
 	clientOptions.BindFlags(flag.CommandLine)
 	logOptions.BindFlags(flag.CommandLine)
@@ -184,6 +190,8 @@ func main() {
 	}).SetupWithManagerAndOptions(mgr, controllers.GitRepositoryReconcilerOptions{
 		MaxConcurrentReconciles:   concurrent,
 		DependencyRequeueInterval: requeueDependency,
+		ArtifactRetentionTTL:      artifactRetentionTTL,
+		ArtifactRetentionRecords:  artifactRetentionRecords,
 	}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", sourcev1.GitRepositoryKind)
 		os.Exit(1)
