@@ -24,6 +24,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -483,6 +484,110 @@ func TestStorageCopyFromPath(t *testing.T) {
 				t.Errorf("CopyFromPath() error = %v", err)
 			}
 			matchFile(t, storage, artifact, tt.want, tt.expectMismatch)
+		})
+	}
+}
+
+func TestStorage_getGarbageFiles(t *testing.T) {
+	artifactFolder := path.Join("foo", "bar")
+	tests := []struct {
+		name                 string
+		artifactPaths        []string
+		createPause          time.Duration
+		ttl                  time.Duration
+		maxItemsToBeRetained int
+		wantDeleted          []string
+	}{
+		{
+			name: "delete files based on maxItemsToBeRetained",
+			artifactPaths: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+				path.Join(artifactFolder, "artifact3.tar.gz"),
+				path.Join(artifactFolder, "artifact4.tar.gz"),
+				path.Join(artifactFolder, "artifact5.tar.gz"),
+			},
+			createPause:          time.Millisecond * 10,
+			ttl:                  time.Minute * 2,
+			maxItemsToBeRetained: 2,
+			wantDeleted: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+				path.Join(artifactFolder, "artifact3.tar.gz"),
+			},
+		},
+		{
+			name: "delete files based on ttl",
+			artifactPaths: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+				path.Join(artifactFolder, "artifact3.tar.gz"),
+				path.Join(artifactFolder, "artifact4.tar.gz"),
+				path.Join(artifactFolder, "artifact5.tar.gz"),
+			},
+			createPause:          time.Second * 1,
+			ttl:                  time.Second*3 + time.Millisecond*500,
+			maxItemsToBeRetained: 4,
+			wantDeleted: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+			},
+		},
+		{
+			name: "delete files based on ttl and maxItemsToBeRetained",
+			artifactPaths: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+				path.Join(artifactFolder, "artifact3.tar.gz"),
+				path.Join(artifactFolder, "artifact4.tar.gz"),
+				path.Join(artifactFolder, "artifact5.tar.gz"),
+				path.Join(artifactFolder, "artifact6.tar.gz"),
+			},
+			createPause:          time.Second * 1,
+			ttl:                  time.Second*5 + time.Millisecond*500,
+			maxItemsToBeRetained: 4,
+			wantDeleted: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := NewWithT(t)
+			dir, err := os.MkdirTemp("", "")
+			g.Expect(err).ToNot(HaveOccurred())
+			t.Cleanup(func() { os.RemoveAll(dir) })
+
+			s, err := NewStorage(dir, "hostname", time.Minute)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to create new storage")
+
+			artifact := sourcev1.Artifact{
+				Path: tt.artifactPaths[len(tt.artifactPaths)-1],
+			}
+			g.Expect(os.MkdirAll(path.Join(dir, artifactFolder), 0o755)).ToNot(HaveOccurred())
+			for _, artifactPath := range tt.artifactPaths {
+				f, err := os.Create(path.Join(dir, artifactPath))
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(f.Close()).ToNot(HaveOccurred())
+				time.Sleep(tt.createPause)
+			}
+
+			deletedPaths := s.getGarbageFiles(artifact, tt.maxItemsToBeRetained, tt.ttl)
+			g.Expect(len(tt.wantDeleted)).To(Equal(len(deletedPaths)))
+			for _, wantDeletedPath := range tt.wantDeleted {
+				present := false
+				for _, deletedPath := range deletedPaths {
+					if strings.Contains(deletedPath, wantDeletedPath) {
+						present = true
+						break
+					}
+				}
+				if present == false {
+					g.Fail(fmt.Sprintf("expected file to be deleted, still exists: %s", wantDeletedPath))
+				}
+			}
 		})
 	}
 }

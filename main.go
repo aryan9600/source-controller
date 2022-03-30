@@ -123,9 +123,9 @@ func main() {
 	flag.StringVar(&helmCachePurgeInterval, "helm-cache-purge-interval", "1m",
 		"The interval at which the cache is purged. Valid time units are ns, us (or µs), ms, s, m, h.")
 	flag.DurationVar(&artifactRetentionTTL, "artifact-retention-ttl", 30*time.Second,
-		"The duration for which artifacts be persisted in storage before being evicted.")
+		"The duration of time that artifacts will be kept in storage before being garbage collected.")
 	flag.IntVar(&artifactRetentionRecords, "artifact-retention-records", 2,
-		"The number of artifacts allowed to be present in storage.")
+		"The maximum number of artifacts to be kept in storage after a garbage collection.")
 
 	clientOptions.BindFlags(flag.CommandLine)
 	logOptions.BindFlags(flag.CommandLine)

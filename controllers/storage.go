@@ -146,7 +146,12 @@ func (s *Storage) RemoveAllButCurrent(artifact sourcev1.Artifact) ([]string, err
 	return deletedFiles, nil
 }
 
-func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Duration) []string {
+// getGarbageFiles returns all files that need to be garbage collected for the given artifact.
+// Garbage files are determined based on the below flow:
+// 1. collect all files with an expired ttl
+// 2. if we satisfy maxItemsToBeRetained, then return
+// 3. else, remove all files till the latest n files remain, where n=maxItemsToBeRetained
+func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) []string {
 	localPath := s.LocalPath(artifact)
 	dir := filepath.Dir(localPath)
 	garbageFiles := []string{}
@@ -154,20 +159,28 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Du
 	// sortedPaths contain all files sorted according to their created ts.
 	sortedPaths := []string{}
 	now := time.Now().UTC()
+	totalFiles := 0
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		createdAt := info.ModTime().UTC()
 		diff := now.Sub(createdAt)
 		// compare the time difference between now and the time at which the file was created
 		// with the provided ttl. delete if difference is greater than the ttl.
 		expired := diff > ttl
-		if path != localPath && !info.IsDir() && info.Mode()&os.ModeSymlink != os.ModeSymlink && expired {
-			garbageFiles = append(garbageFiles, path)
-		}
 		if !info.IsDir() && info.Mode()&os.ModeSymlink != os.ModeSymlink {
+			if path != localPath && expired {
+				garbageFiles = append(garbageFiles, path)
+			}
+			totalFiles += 1
 			filesWithCreatedTs[info.ModTime().UTC()] = path
 		}
 		return nil
 	})
+	// We already collected enough garbage files to satisfy the no of max
+	// items that are supposed to be retained, so exit early.
+	if totalFiles-len(garbageFiles) < maxItemsToBeRetained {
+		return garbageFiles
+	}
+
 	creationTimestamps := []time.Time{}
 	for ts := range filesWithCreatedTs {
 		creationTimestamps = append(creationTimestamps, ts)
@@ -182,11 +195,25 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Du
 		sortedPaths = append(sortedPaths, path)
 	}
 
-	for i, path := range sortedPaths {
-		if path != localPath && !stringInSlice(path, garbageFiles) && len(sortedPaths) <= n {
-			// append path to garbageFiles and remove it from sortedPaths
-			garbageFiles = append(garbageFiles, path)
-			sortedPaths = append(sortedPaths[:i], sortedPaths[i+1:]...)
+	var collected int
+	noOfGarbageFiles := len(garbageFiles)
+	for _, path := range sortedPaths {
+		if path != localPath && !stringInSlice(path, garbageFiles) {
+			// If we previously collected a few garbage files with an expired ttl, then take that into account
+			// when checking whether we need to remove more files to satisfy the max no of items allowed
+			// in the filesystem, along with the no of files already removed in this loop.
+			if noOfGarbageFiles > 0 {
+				if (len(sortedPaths) - collected - len(garbageFiles)) > maxItemsToBeRetained {
+					// append path to garbageFiles and remove it from sortedPaths
+					garbageFiles = append(garbageFiles, path)
+					collected += 1
+				}
+			} else {
+				if len(sortedPaths)-collected > maxItemsToBeRetained {
+					garbageFiles = append(garbageFiles, path)
+					collected += 1
+				}
+			}
 		}
 	}
 
@@ -195,8 +222,8 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Du
 
 // RemoveGarbageFiles removes all garabge files in the artifact dir according to the provided
 // retention options.
-func (s *Storage) RemoveGarbageFiles(artifact sourcev1.Artifact, n int, ttl time.Duration) ([]string, error) {
-	garbageFiles := s.getGarbageFiles(artifact, n, ttl)
+func (s *Storage) RemoveGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
+	garbageFiles := s.getGarbageFiles(artifact, maxItemsToBeRetained, ttl)
 	var errors []string
 	var deleted []string
 	if len(garbageFiles) > 0 {
