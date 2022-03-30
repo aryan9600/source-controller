@@ -151,7 +151,7 @@ func (s *Storage) RemoveAllButCurrent(artifact sourcev1.Artifact) ([]string, err
 // 1. collect all files with an expired ttl
 // 2. if we satisfy maxItemsToBeRetained, then return
 // 3. else, remove all files till the latest n files remain, where n=maxItemsToBeRetained
-func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) []string {
+func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
 	localPath := s.LocalPath(artifact)
 	dir := filepath.Dir(localPath)
 	garbageFiles := []string{}
@@ -160,7 +160,12 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 	sortedPaths := []string{}
 	now := time.Now().UTC()
 	totalFiles := 0
+	var errors []string
 	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			errors = append(errors, err.Error())
+			return nil
+		}
 		createdAt := info.ModTime().UTC()
 		diff := now.Sub(createdAt)
 		// compare the time difference between now and the time at which the file was created
@@ -175,10 +180,14 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 		}
 		return nil
 	})
+	if len(errors) > 0 {
+		return nil, fmt.Errorf("can't walk over file: %s", strings.Join(errors, ","))
+	}
+
 	// We already collected enough garbage files to satisfy the no of max
 	// items that are supposed to be retained, so exit early.
 	if totalFiles-len(garbageFiles) < maxItemsToBeRetained {
-		return garbageFiles
+		return garbageFiles, nil
 	}
 
 	creationTimestamps := []time.Time{}
@@ -190,7 +199,7 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 	for _, ts := range creationTimestamps {
 		path, ok := filesWithCreatedTs[ts]
 		if !ok {
-			return nil
+			return garbageFiles, fmt.Errorf("failed to fetch file for created ts: %v", ts)
 		}
 		sortedPaths = append(sortedPaths, path)
 	}
@@ -217,13 +226,16 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 		}
 	}
 
-	return garbageFiles
+	return garbageFiles, nil
 }
 
 // RemoveGarbageFiles removes all garabge files in the artifact dir according to the provided
 // retention options.
 func (s *Storage) RemoveGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
-	garbageFiles := s.getGarbageFiles(artifact, maxItemsToBeRetained, ttl)
+	garbageFiles, err := s.getGarbageFiles(artifact, maxItemsToBeRetained, ttl)
+	if err != nil {
+		return nil, err
+	}
 	var errors []string
 	var deleted []string
 	if len(garbageFiles) > 0 {

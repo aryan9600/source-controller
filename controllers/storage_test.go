@@ -574,7 +574,8 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 				time.Sleep(tt.createPause)
 			}
 
-			deletedPaths := s.getGarbageFiles(artifact, tt.maxItemsToBeRetained, tt.ttl)
+			deletedPaths, err := s.getGarbageFiles(artifact, tt.maxItemsToBeRetained, tt.ttl)
+			g.Expect(err).ToNot(HaveOccurred(), "failed to collect garbage files")
 			g.Expect(len(tt.wantDeleted)).To(Equal(len(deletedPaths)))
 			for _, wantDeletedPath := range tt.wantDeleted {
 				present := false
