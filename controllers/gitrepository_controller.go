@@ -714,7 +714,7 @@ func (r *GitRepositoryReconciler) garbageCollect(ctx context.Context, obj *sourc
 		return nil
 	}
 	if obj.GetArtifact() != nil {
-		deleted, err := r.Storage.RemoveGarbageFiles(*obj.GetArtifact(), r.artifactRetentionRecords, r.artifactRetentionTTL)
+		deleted, err := r.Storage.GarbageCollect(*obj.GetArtifact(), r.artifactRetentionRecords, r.artifactRetentionTTL)
 		if err != nil {
 			return &serror.Event{
 				Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),

@@ -36,11 +36,15 @@ import (
 
 	"github.com/fluxcd/pkg/lockedfile"
 
+	"io/fs"
+
 	"github.com/fluxcd/pkg/untar"
 	sourcev1 "github.com/fluxcd/source-controller/api/v1beta2"
-	"github.com/fluxcd/source-controller/internal/fs"
+	sourcefs "github.com/fluxcd/source-controller/internal/fs"
 	"github.com/fluxcd/source-controller/pkg/sourceignore"
 )
+
+const GarbageCountLimit = 1000
 
 // Storage manages artifacts
 type Storage struct {
@@ -151,7 +155,7 @@ func (s *Storage) RemoveAllButCurrent(artifact sourcev1.Artifact) ([]string, err
 // 1. collect all files with an expired ttl
 // 2. if we satisfy maxItemsToBeRetained, then return
 // 3. else, remove all files till the latest n files remain, where n=maxItemsToBeRetained
-func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
+func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, totalCountLimit, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
 	localPath := s.LocalPath(artifact)
 	dir := filepath.Dir(localPath)
 	garbageFiles := []string{}
@@ -161,9 +165,21 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 	now := time.Now().UTC()
 	totalFiles := 0
 	var errors []string
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	creationTimestamps := []time.Time{}
+	_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errors = append(errors, err.Error())
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			errors = append(errors, err.Error())
+			return nil
+		}
+		// Exit if we have already walked through `totalCountLimit` files, to avoid
+		// proccess time starvation. The remaining potential garbage files will be cleaned up
+		// in the next reconciler run.
+		if totalFiles >= totalCountLimit {
 			return nil
 		}
 		createdAt := info.ModTime().UTC()
@@ -176,9 +192,11 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 				garbageFiles = append(garbageFiles, path)
 			}
 			totalFiles += 1
-			filesWithCreatedTs[info.ModTime().UTC()] = path
+			filesWithCreatedTs[createdAt] = path
+			creationTimestamps = append(creationTimestamps, createdAt)
 		}
 		return nil
+
 	})
 	if len(errors) > 0 {
 		return nil, fmt.Errorf("can't walk over file: %s", strings.Join(errors, ","))
@@ -190,10 +208,6 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 		return garbageFiles, nil
 	}
 
-	creationTimestamps := []time.Time{}
-	for ts := range filesWithCreatedTs {
-		creationTimestamps = append(creationTimestamps, ts)
-	}
 	// sort all timestamps in an ascending order.
 	sort.Slice(creationTimestamps, func(i, j int) bool { return creationTimestamps[i].Before(creationTimestamps[j]) })
 	for _, ts := range creationTimestamps {
@@ -229,10 +243,10 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetain
 	return garbageFiles, nil
 }
 
-// RemoveGarbageFiles removes all garabge files in the artifact dir according to the provided
+// GarbageCollect removes all garabge files in the artifact dir according to the provided
 // retention options.
-func (s *Storage) RemoveGarbageFiles(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
-	garbageFiles, err := s.getGarbageFiles(artifact, maxItemsToBeRetained, ttl)
+func (s *Storage) GarbageCollect(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
+	garbageFiles, err := s.getGarbageFiles(artifact, GarbageCountLimit, maxItemsToBeRetained, ttl)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +413,7 @@ func (s *Storage) Archive(artifact *sourcev1.Artifact, dir string, filter Archiv
 		return err
 	}
 
-	if err := fs.RenameWithFallback(tmpName, localPath); err != nil {
+	if err := sourcefs.RenameWithFallback(tmpName, localPath); err != nil {
 		return err
 	}
 
@@ -441,7 +455,7 @@ func (s *Storage) AtomicWriteFile(artifact *sourcev1.Artifact, reader io.Reader,
 		return err
 	}
 
-	if err := fs.RenameWithFallback(tfName, localPath); err != nil {
+	if err := sourcefs.RenameWithFallback(tfName, localPath); err != nil {
 		return err
 	}
 
@@ -479,7 +493,7 @@ func (s *Storage) Copy(artifact *sourcev1.Artifact, reader io.Reader) (err error
 		return err
 	}
 
-	if err := fs.RenameWithFallback(tfName, localPath); err != nil {
+	if err := sourcefs.RenameWithFallback(tfName, localPath); err != nil {
 		return err
 	}
 
@@ -539,7 +553,7 @@ func (s *Storage) CopyToPath(artifact *sourcev1.Artifact, subPath, toPath string
 	if err != nil {
 		return err
 	}
-	if err := fs.RenameWithFallback(fromPath, toPath); err != nil {
+	if err := sourcefs.RenameWithFallback(fromPath, toPath); err != nil {
 		return err
 	}
 	return nil

@@ -496,6 +496,7 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 		createPause          time.Duration
 		ttl                  time.Duration
 		maxItemsToBeRetained int
+		totalCountLimit      int
 		wantDeleted          []string
 	}{
 		{
@@ -509,6 +510,7 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 			},
 			createPause:          time.Millisecond * 10,
 			ttl:                  time.Minute * 2,
+			totalCountLimit:      10,
 			maxItemsToBeRetained: 2,
 			wantDeleted: []string{
 				path.Join(artifactFolder, "artifact1.tar.gz"),
@@ -527,6 +529,7 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 			},
 			createPause:          time.Second * 1,
 			ttl:                  time.Second*3 + time.Millisecond*500,
+			totalCountLimit:      10,
 			maxItemsToBeRetained: 4,
 			wantDeleted: []string{
 				path.Join(artifactFolder, "artifact1.tar.gz"),
@@ -545,10 +548,31 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 			},
 			createPause:          time.Second * 1,
 			ttl:                  time.Second*5 + time.Millisecond*500,
+			totalCountLimit:      10,
 			maxItemsToBeRetained: 4,
 			wantDeleted: []string{
 				path.Join(artifactFolder, "artifact1.tar.gz"),
 				path.Join(artifactFolder, "artifact2.tar.gz"),
+			},
+		},
+		{
+			name: "delete files based on ttl and maxItemsToBeRetained and totalCountLimit",
+			artifactPaths: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+				path.Join(artifactFolder, "artifact3.tar.gz"),
+				path.Join(artifactFolder, "artifact4.tar.gz"),
+				path.Join(artifactFolder, "artifact5.tar.gz"),
+				path.Join(artifactFolder, "artifact6.tar.gz"),
+			},
+			createPause:          time.Millisecond * 500,
+			ttl:                  time.Millisecond * 500,
+			totalCountLimit:      3,
+			maxItemsToBeRetained: 2,
+			wantDeleted: []string{
+				path.Join(artifactFolder, "artifact1.tar.gz"),
+				path.Join(artifactFolder, "artifact2.tar.gz"),
+				path.Join(artifactFolder, "artifact3.tar.gz"),
 			},
 		},
 	}
@@ -574,7 +598,7 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 				time.Sleep(tt.createPause)
 			}
 
-			deletedPaths, err := s.getGarbageFiles(artifact, tt.maxItemsToBeRetained, tt.ttl)
+			deletedPaths, err := s.getGarbageFiles(artifact, tt.totalCountLimit, tt.maxItemsToBeRetained, tt.ttl)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to collect garbage files")
 			g.Expect(len(tt.wantDeleted)).To(Equal(len(deletedPaths)))
 			for _, wantDeletedPath := range tt.wantDeleted {
