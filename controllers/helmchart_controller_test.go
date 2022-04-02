@@ -303,7 +303,7 @@ func TestHelmChartReconciler_reconcileSource(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	defer os.RemoveAll(tmpDir)
 
-	storage, err := NewStorage(tmpDir, "example.com", timeout)
+	storage, err := NewStorage(tmpDir, "example.com", timeout, 2)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	gitArtifact := &sourcev1.Artifact{
@@ -777,7 +777,7 @@ func TestHelmChartReconciler_buildFromTarballArtifact(t *testing.T) {
 	g.Expect(err).ToNot(HaveOccurred())
 	defer os.RemoveAll(tmpDir)
 
-	storage, err := NewStorage(tmpDir, "example.com", timeout)
+	storage, err := NewStorage(tmpDir, "example.com", timeout, 2)
 	g.Expect(err).ToNot(HaveOccurred())
 
 	chartsArtifact := &sourcev1.Artifact{

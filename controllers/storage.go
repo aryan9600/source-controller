@@ -32,6 +32,8 @@ import (
 
 	securejoin "github.com/cyphar/filepath-securejoin"
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
+	kerrors "k8s.io/apimachinery/pkg/util/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/fluxcd/pkg/lockedfile"
@@ -54,19 +56,25 @@ type Storage struct {
 	// Hostname is the file server host name used to compose the artifacts URIs.
 	Hostname string `json:"hostname"`
 
-	// Timeout for artifacts operations
-	Timeout time.Duration `json:"timeout"`
+	// ArtifactRetentionTTL is the maximum number of artifacts to be kept in storage
+	// after a garbage collection.
+	ArtifactRetentionTTL time.Duration `json:"artifactRetentionTTL"`
+
+	// ArtifactRetentionRecords is the duration of time that artifacts will be kept in
+	// storage before being garbage collected.
+	ArtifactRetentionRecords int `json:"artifactRetentionRecords"`
 }
 
 // NewStorage creates the storage helper for a given path and hostname.
-func NewStorage(basePath string, hostname string, timeout time.Duration) (*Storage, error) {
+func NewStorage(basePath string, hostname string, artifactRetentionTTL time.Duration, artifactRetentionRecords int) (*Storage, error) {
 	if f, err := os.Stat(basePath); os.IsNotExist(err) || !f.IsDir() {
 		return nil, fmt.Errorf("invalid dir path: %s", basePath)
 	}
 	return &Storage{
-		BasePath: basePath,
-		Hostname: hostname,
-		Timeout:  timeout,
+		BasePath:                 basePath,
+		Hostname:                 hostname,
+		ArtifactRetentionTTL:     artifactRetentionTTL,
+		ArtifactRetentionRecords: artifactRetentionRecords,
 	}, nil
 }
 
@@ -171,15 +179,12 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, totalCountLimit, m
 			errors = append(errors, err.Error())
 			return nil
 		}
+		if totalFiles >= totalCountLimit {
+			return fmt.Errorf("Reached file walking limit, already walked over: %d", totalFiles)
+		}
 		info, err := d.Info()
 		if err != nil {
 			errors = append(errors, err.Error())
-			return nil
-		}
-		// Exit if we have already walked through `totalCountLimit` files, to avoid
-		// proccess time starvation. The remaining potential garbage files will be cleaned up
-		// in the next reconciler run.
-		if totalFiles >= totalCountLimit {
 			return nil
 		}
 		createdAt := info.ModTime().UTC()
@@ -245,27 +250,29 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, totalCountLimit, m
 
 // GarbageCollect removes all garabge files in the artifact dir according to the provided
 // retention options.
-func (s *Storage) GarbageCollect(artifact sourcev1.Artifact, maxItemsToBeRetained int, ttl time.Duration) ([]string, error) {
-	garbageFiles, err := s.getGarbageFiles(artifact, GarbageCountLimit, maxItemsToBeRetained, ttl)
+func (s *Storage) GarbageCollect(artifact sourcev1.Artifact, delFilesChan chan<- []string, errorChan chan<- error) {
+	garbageFiles, err := s.getGarbageFiles(artifact, GarbageCountLimit, s.ArtifactRetentionRecords, s.ArtifactRetentionTTL)
 	if err != nil {
-		return nil, err
+		errorChan <- err
+		return
 	}
-	var errors []string
+	var errors []error
 	var deleted []string
 	if len(garbageFiles) > 0 {
 		for _, file := range garbageFiles {
 			err := os.Remove(file)
 			if err != nil {
-				errors = append(errors, err.Error())
+				errors = append(errors, err)
 			} else {
 				deleted = append(deleted, file)
 			}
 		}
 	}
 	if len(errors) > 0 {
-		return deleted, fmt.Errorf("failed to remove files: %s", strings.Join(errors, " "))
+		errorChan <- kerrors.NewAggregate(errors)
+		return
 	}
-	return deleted, nil
+	delFilesChan <- deleted
 }
 
 func stringInSlice(a string, list []string) bool {

@@ -49,7 +49,7 @@ func TestStorageConstructor(t *testing.T) {
 	}
 	t.Cleanup(cleanupStoragePath(dir))
 
-	if _, err := NewStorage("/nonexistent", "hostname", time.Minute); err == nil {
+	if _, err := NewStorage("/nonexistent", "hostname", time.Minute, 2); err == nil {
 		t.Fatal("nonexistent path was allowable in storage constructor")
 	}
 
@@ -59,13 +59,13 @@ func TestStorageConstructor(t *testing.T) {
 	}
 	f.Close()
 
-	if _, err := NewStorage(f.Name(), "hostname", time.Minute); err == nil {
+	if _, err := NewStorage(f.Name(), "hostname", time.Minute, 2); err == nil {
 		os.Remove(f.Name())
 		t.Fatal("file path was accepted as basedir")
 	}
 	os.Remove(f.Name())
 
-	if _, err := NewStorage(dir, "hostname", time.Minute); err != nil {
+	if _, err := NewStorage(dir, "hostname", time.Minute, 2); err != nil {
 		t.Fatalf("Valid path did not successfully return: %v", err)
 	}
 }
@@ -118,7 +118,7 @@ func TestStorage_Archive(t *testing.T) {
 	}
 	t.Cleanup(cleanupStoragePath(dir))
 
-	storage, err := NewStorage(dir, "hostname", time.Minute)
+	storage, err := NewStorage(dir, "hostname", time.Minute, 2)
 	if err != nil {
 		t.Fatalf("error while bootstrapping storage: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestStorageRemoveAllButCurrent(t *testing.T) {
 		}
 		t.Cleanup(func() { os.RemoveAll(dir) })
 
-		s, err := NewStorage(dir, "hostname", time.Minute)
+		s, err := NewStorage(dir, "hostname", time.Minute, 2)
 		if err != nil {
 			t.Fatalf("Valid path did not successfully return: %v", err)
 		}
@@ -306,7 +306,7 @@ func TestStorageRemoveAllButCurrent(t *testing.T) {
 		g.Expect(err).ToNot(HaveOccurred())
 		t.Cleanup(func() { os.RemoveAll(dir) })
 
-		s, err := NewStorage(dir, "hostname", time.Minute)
+		s, err := NewStorage(dir, "hostname", time.Minute, 2)
 		g.Expect(err).ToNot(HaveOccurred(), "failed to create new storage")
 
 		artifact := sourcev1.Artifact{
@@ -369,7 +369,7 @@ func TestStorageRemoveAll(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			t.Cleanup(func() { os.RemoveAll(dir) })
 
-			s, err := NewStorage(dir, "hostname", time.Minute)
+			s, err := NewStorage(dir, "hostname", time.Minute, 2)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to create new storage")
 
 			artifact := sourcev1.Artifact{
@@ -399,7 +399,7 @@ func TestStorageCopyFromPath(t *testing.T) {
 	}
 	t.Cleanup(cleanupStoragePath(dir))
 
-	storage, err := NewStorage(dir, "hostname", time.Minute)
+	storage, err := NewStorage(dir, "hostname", time.Minute, 2)
 	if err != nil {
 		t.Fatalf("error while bootstrapping storage: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestStorage_getGarbageFiles(t *testing.T) {
 			g.Expect(err).ToNot(HaveOccurred())
 			t.Cleanup(func() { os.RemoveAll(dir) })
 
-			s, err := NewStorage(dir, "hostname", time.Minute)
+			s, err := NewStorage(dir, "hostname", tt.ttl, tt.maxItemsToBeRetained)
 			g.Expect(err).ToNot(HaveOccurred(), "failed to create new storage")
 
 			artifact := sourcev1.Artifact{

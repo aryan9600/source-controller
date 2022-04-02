@@ -179,7 +179,7 @@ func main() {
 	if storageAdvAddr == "" {
 		storageAdvAddr = determineAdvStorageAddr(storageAddr, setupLog)
 	}
-	storage := mustInitStorage(storagePath, storageAdvAddr, setupLog)
+	storage := mustInitStorage(storagePath, storageAdvAddr, artifactRetentionTTL, artifactRetentionRecords, setupLog)
 
 	if err = (&controllers.GitRepositoryReconciler{
 		Client:         mgr.GetClient(),
@@ -286,14 +286,14 @@ func startFileServer(path string, address string, l logr.Logger) {
 	}
 }
 
-func mustInitStorage(path string, storageAdvAddr string, l logr.Logger) *controllers.Storage {
+func mustInitStorage(path string, storageAdvAddr string, artifactRetentionTTL time.Duration, artifactRetentionRecords int, l logr.Logger) *controllers.Storage {
 	if path == "" {
 		p, _ := os.Getwd()
 		path = filepath.Join(p, "bin")
 		os.MkdirAll(path, 0777)
 	}
 
-	storage, err := controllers.NewStorage(path, storageAdvAddr, 5*time.Minute)
+	storage, err := controllers.NewStorage(path, storageAdvAddr, artifactRetentionTTL, artifactRetentionRecords)
 	if err != nil {
 		l.Error(err, "unable to initialise storage")
 		os.Exit(1)

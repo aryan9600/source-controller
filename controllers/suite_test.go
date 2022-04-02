@@ -181,7 +181,7 @@ func initTestTLS() {
 }
 
 func newTestStorage(s *testserver.HTTPServer) (*Storage, error) {
-	storage, err := NewStorage(s.Root(), s.URL(), timeout)
+	storage, err := NewStorage(s.Root(), s.URL(), timeout, 2)
 	if err != nil {
 		return nil, err
 	}

@@ -281,6 +281,9 @@ func (r *GitRepositoryReconciler) reconcile(ctx context.Context, obj *sourcev1.G
 func (r *GitRepositoryReconciler) reconcileStorage(ctx context.Context,
 	obj *sourcev1.GitRepository, _ *git.Commit, _ *artifactSet, _ string) (sreconcile.Result, error) {
 	// Garbage collect previous advertised artifact(s) from storage
+	// Abort if it takes more than 1/3 the requeue interval to avoid stalling the worker.
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(obj.Spec.Interval.Duration.Seconds()/3))
+	defer cancel()
 	_ = r.garbageCollect(ctx, obj)
 
 	// Determine if the advertised artifact is still in storage
@@ -714,16 +717,30 @@ func (r *GitRepositoryReconciler) garbageCollect(ctx context.Context, obj *sourc
 		return nil
 	}
 	if obj.GetArtifact() != nil {
-		deleted, err := r.Storage.GarbageCollect(*obj.GetArtifact(), r.artifactRetentionRecords, r.artifactRetentionTTL)
-		if err != nil {
-			return &serror.Event{
-				Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
-				Reason: "GarbageCollectionFailed",
+		delFilesChan := make(chan []string)
+		errChan := make(chan error)
+		go r.Storage.GarbageCollect(*obj.GetArtifact(), delFilesChan, errChan)
+		for {
+			select {
+			case <-ctx.Done():
+				err := context.DeadlineExceeded
+				r.eventLogf(ctx, obj, corev1.EventTypeWarning, "GarbageCollectionFailed",
+					fmt.Sprintf("garbage collection of old artifacts failed: %s", err))
+				return err
+			case delFiles := <-delFilesChan:
+				if len(delFiles) > 0 {
+					r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
+						fmt.Sprintf("garbage collected %d old artifacts", len(delFiles)))
+				}
+				return nil
+			case err := <-errChan:
+				e := &serror.Event{
+					Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
+					Reason: "GarbageCollectionFailed",
+				}
+				r.eventLogf(ctx, obj, corev1.EventTypeWarning, e.Reason, e.Err.Error())
+				return e
 			}
-		}
-		if len(deleted) > 0 {
-			r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
-				fmt.Sprintf("garbage collected %d old artifacts", len(deleted)))
 		}
 	}
 	return nil
