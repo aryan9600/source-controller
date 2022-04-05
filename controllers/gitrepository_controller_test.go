@@ -1178,10 +1178,8 @@ func TestGitRepositoryReconciler_garbageCollect(t *testing.T) {
 			}()
 
 			r := &GitRepositoryReconciler{
-				EventRecorder:            record.NewFakeRecorder(32),
-				Storage:                  testStorage,
-				artifactRetentionRecords: 2,
-				artifactRetentionTTL:     2 * time.Second,
+				EventRecorder: record.NewFakeRecorder(32),
+				Storage:       testStorage,
 			}
 
 			obj := &sourcev1.GitRepository{
@@ -1287,10 +1285,8 @@ func TestGitRepositoryReconciler_reconcileStorage(t *testing.T) {
 			}()
 
 			r := &GitRepositoryReconciler{
-				EventRecorder:            record.NewFakeRecorder(32),
-				Storage:                  testStorage,
-				artifactRetentionRecords: 2,
-				artifactRetentionTTL:     2 * time.Second,
+				EventRecorder: record.NewFakeRecorder(32),
+				Storage:       testStorage,
 			}
 
 			obj := &sourcev1.GitRepository{

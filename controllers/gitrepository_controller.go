@@ -105,16 +105,12 @@ type GitRepositoryReconciler struct {
 	Storage        *Storage
 	ControllerName string
 
-	requeueDependency        time.Duration
-	artifactRetentionTTL     time.Duration
-	artifactRetentionRecords int
+	requeueDependency time.Duration
 }
 
 type GitRepositoryReconcilerOptions struct {
 	MaxConcurrentReconciles   int
 	DependencyRequeueInterval time.Duration
-	ArtifactRetentionTTL      time.Duration
-	ArtifactRetentionRecords  int
 }
 
 // gitRepositoryReconcileFunc is the function type for all the
@@ -127,8 +123,6 @@ func (r *GitRepositoryReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 func (r *GitRepositoryReconciler) SetupWithManagerAndOptions(mgr ctrl.Manager, opts GitRepositoryReconcilerOptions) error {
 	r.requeueDependency = opts.DependencyRequeueInterval
-	r.artifactRetentionRecords = opts.ArtifactRetentionRecords
-	r.artifactRetentionTTL = opts.ArtifactRetentionTTL
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&sourcev1.GitRepository{}, builder.WithPredicates(
@@ -281,8 +275,8 @@ func (r *GitRepositoryReconciler) reconcile(ctx context.Context, obj *sourcev1.G
 func (r *GitRepositoryReconciler) reconcileStorage(ctx context.Context,
 	obj *sourcev1.GitRepository, _ *git.Commit, _ *artifactSet, _ string) (sreconcile.Result, error) {
 	// Garbage collect previous advertised artifact(s) from storage
-	// Abort if it takes more than 1/3 the requeue interval to avoid stalling the worker.
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(obj.Spec.Interval.Duration.Seconds()/3))
+	// Abort if it takes more than 5 seconds.
+	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
 	defer cancel()
 	_ = r.garbageCollect(ctx, obj)
 

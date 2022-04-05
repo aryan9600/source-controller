@@ -122,7 +122,7 @@ func main() {
 		"The TTL of an index in the cache. Valid time units are ns, us (or µs), ms, s, m, h.")
 	flag.StringVar(&helmCachePurgeInterval, "helm-cache-purge-interval", "1m",
 		"The interval at which the cache is purged. Valid time units are ns, us (or µs), ms, s, m, h.")
-	flag.DurationVar(&artifactRetentionTTL, "artifact-retention-ttl", 30*time.Second,
+	flag.DurationVar(&artifactRetentionTTL, "artifact-retention-ttl", 60*time.Second,
 		"The duration of time that artifacts will be kept in storage before being garbage collected.")
 	flag.IntVar(&artifactRetentionRecords, "artifact-retention-records", 2,
 		"The maximum number of artifacts to be kept in storage after a garbage collection.")
@@ -190,8 +190,6 @@ func main() {
 	}).SetupWithManagerAndOptions(mgr, controllers.GitRepositoryReconcilerOptions{
 		MaxConcurrentReconciles:   concurrent,
 		DependencyRequeueInterval: requeueDependency,
-		ArtifactRetentionTTL:      artifactRetentionTTL,
-		ArtifactRetentionRecords:  artifactRetentionRecords,
 	}); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", sourcev1.GitRepositoryKind)
 		os.Exit(1)

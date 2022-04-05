@@ -285,6 +285,9 @@ func (r *HelmChartReconciler) reconcile(ctx context.Context, obj *sourcev1.HelmC
 // they match the Storage server hostname of current runtime.
 func (r *HelmChartReconciler) reconcileStorage(ctx context.Context, obj *sourcev1.HelmChart, build *chart.Build) (sreconcile.Result, error) {
 	// Garbage collect previous advertised artifact(s) from storage
+	// Abort if it takes more than 5 seconds.
+	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
+	defer cancel()
 	_ = r.garbageCollect(ctx, obj)
 
 	// Determine if the advertised artifact is still in storage
@@ -801,14 +804,30 @@ func (r *HelmChartReconciler) garbageCollect(ctx context.Context, obj *sourcev1.
 		return nil
 	}
 	if obj.GetArtifact() != nil {
-		if deleted, err := r.Storage.RemoveAllButCurrent(*obj.GetArtifact()); err != nil {
-			return &serror.Event{
-				Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
-				Reason: "GarbageCollectionFailed",
+		delFilesChan := make(chan []string)
+		errChan := make(chan error)
+		go r.Storage.GarbageCollect(*obj.GetArtifact(), delFilesChan, errChan)
+		for {
+			select {
+			case <-ctx.Done():
+				err := context.DeadlineExceeded
+				r.eventLogf(ctx, obj, corev1.EventTypeWarning, "GarbageCollectionFailed",
+					fmt.Sprintf("garbage collection of old artifacts failed: %s", err))
+				return err
+			case delFiles := <-delFilesChan:
+				if len(delFiles) > 0 {
+					r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
+						fmt.Sprintf("garbage collected %d old artifacts", len(delFiles)))
+				}
+				return nil
+			case err := <-errChan:
+				e := &serror.Event{
+					Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
+					Reason: "GarbageCollectionFailed",
+				}
+				r.eventLogf(ctx, obj, corev1.EventTypeWarning, e.Reason, e.Err.Error())
+				return e
 			}
-		} else if len(deleted) > 0 {
-			r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
-				"garbage collected old artifacts")
 		}
 	}
 	return nil
