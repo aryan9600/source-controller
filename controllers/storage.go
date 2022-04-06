@@ -19,6 +19,7 @@ package controllers
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"fmt"
 	"hash"
@@ -250,29 +251,48 @@ func (s *Storage) getGarbageFiles(artifact sourcev1.Artifact, totalCountLimit, m
 
 // GarbageCollect removes all garabge files in the artifact dir according to the provided
 // retention options.
-func (s *Storage) GarbageCollect(artifact sourcev1.Artifact, delFilesChan chan<- []string, errorChan chan<- error) {
-	garbageFiles, err := s.getGarbageFiles(artifact, GarbageCountLimit, s.ArtifactRetentionRecords, s.ArtifactRetentionTTL)
-	if err != nil {
-		errorChan <- err
-		return
-	}
-	var errors []error
-	var deleted []string
-	if len(garbageFiles) > 0 {
-		for _, file := range garbageFiles {
-			err := os.Remove(file)
-			if err != nil {
-				errors = append(errors, err)
-			} else {
-				deleted = append(deleted, file)
+func (s *Storage) GarbageCollect(ctx context.Context, artifact sourcev1.Artifact, timeout time.Duration) ([]string, error) {
+	delFilesChan := make(chan []string)
+	errChan := make(chan error)
+	// Abort if it takes more than the provided timeout duration.
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	go func() {
+		garbageFiles, err := s.getGarbageFiles(artifact, GarbageCountLimit, s.ArtifactRetentionRecords, s.ArtifactRetentionTTL)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		var errors []error
+		var deleted []string
+		if len(garbageFiles) > 0 {
+			for _, file := range garbageFiles {
+				err := os.Remove(file)
+				if err != nil {
+					errors = append(errors, err)
+				} else {
+					deleted = append(deleted, file)
+				}
 			}
 		}
+		if len(errors) > 0 {
+			errChan <- kerrors.NewAggregate(errors)
+			return
+		}
+		delFilesChan <- deleted
+	}()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case delFiles := <-delFilesChan:
+			return delFiles, nil
+		case err := <-errChan:
+			return nil, err
+		}
 	}
-	if len(errors) > 0 {
-		errorChan <- kerrors.NewAggregate(errors)
-		return
-	}
-	delFilesChan <- deleted
 }
 
 func stringInSlice(a string, list []string) bool {

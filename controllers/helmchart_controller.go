@@ -804,30 +804,20 @@ func (r *HelmChartReconciler) garbageCollect(ctx context.Context, obj *sourcev1.
 		return nil
 	}
 	if obj.GetArtifact() != nil {
-		delFilesChan := make(chan []string)
-		errChan := make(chan error)
-		go r.Storage.GarbageCollect(*obj.GetArtifact(), delFilesChan, errChan)
-		for {
-			select {
-			case <-ctx.Done():
-				err := context.DeadlineExceeded
-				r.eventLogf(ctx, obj, corev1.EventTypeWarning, "GarbageCollectionFailed",
-					fmt.Sprintf("garbage collection of old artifacts failed: %s", err))
-				return err
-			case delFiles := <-delFilesChan:
-				if len(delFiles) > 0 {
-					r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
-						fmt.Sprintf("garbage collected %d old artifacts", len(delFiles)))
-				}
-				return nil
-			case err := <-errChan:
-				e := &serror.Event{
-					Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
-					Reason: "GarbageCollectionFailed",
-				}
-				r.eventLogf(ctx, obj, corev1.EventTypeWarning, e.Reason, e.Err.Error())
-				return e
+		delFiles, err := r.Storage.GarbageCollect(ctx, *obj.GetArtifact(), time.Second*5)
+		if err != nil {
+			e := &serror.Event{
+				Err:    fmt.Errorf("garbage collection of old artifacts failed: %w", err),
+				Reason: "GarbageCollectionFailed",
 			}
+			r.eventLogf(ctx, obj, corev1.EventTypeWarning, "GarbageCollectionFailed",
+				fmt.Sprintf("garbage collection of old artifacts failed: %s", e))
+			return e
+		}
+		if len(delFiles) > 0 {
+			r.eventLogf(ctx, obj, events.EventTypeTrace, "GarbageCollectionSucceeded",
+				fmt.Sprintf("garbage collected %d old artifacts", len(delFiles)))
+			return nil
 		}
 	}
 	return nil

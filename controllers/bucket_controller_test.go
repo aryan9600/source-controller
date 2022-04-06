@@ -163,13 +163,15 @@ func TestBucketReconciler_Reconcile(t *testing.T) {
 	}, timeout).Should(BeTrue())
 }
 
-func TestBucketReconciler_garbageCollect(t *testing.T) {
+func TestBucketReconciler_reconcileStorage(t *testing.T) {
 	tests := []struct {
-		name        string
-		beforeFunc  func(obj *sourcev1.Bucket, storage *Storage) error
-		wantErr     string
-		assertPaths []string
-		ctxTimeout  time.Duration
+		name             string
+		beforeFunc       func(obj *sourcev1.Bucket, storage *Storage) error
+		want             sreconcile.Result
+		wantErr          bool
+		assertArtifact   *sourcev1.Artifact
+		assertConditions []metav1.Condition
+		assertPaths      []string
 	}{
 		{
 			name: "garbage collects",
@@ -178,7 +180,7 @@ func TestBucketReconciler_garbageCollect(t *testing.T) {
 				for n := range revisions {
 					v := revisions[n]
 					obj.Status.Artifact = &sourcev1.Artifact{
-						Path:     fmt.Sprintf("/garbage-collect/%s.txt", v),
+						Path:     fmt.Sprintf("/reconcile-storage/%s.txt", v),
 						Revision: v,
 					}
 					if err := testStorage.MkdirAll(*obj.Status.Artifact); err != nil {
@@ -194,99 +196,21 @@ func TestBucketReconciler_garbageCollect(t *testing.T) {
 				testStorage.SetArtifactURL(obj.Status.Artifact)
 				return nil
 			},
-			wantErr: "",
+			assertArtifact: &sourcev1.Artifact{
+				Path:     "/reconcile-storage/d.txt",
+				Revision: "d",
+				Checksum: "18ac3e7343f016890c510e93f935261169d9e3f565436429830faf0934f4f8e4",
+				URL:      testStorage.Hostname + "/reconcile-storage/d.txt",
+				Size:     int64p(int64(len("d"))),
+			},
 			assertPaths: []string{
-				"/garbage-collect/d.txt",
-				"/garbage-collect/c.txt",
-				"!/garbage-collect/b.txt",
-				"!/garbage-collect/a.txt",
+				"/reconcile-storage/d.txt",
+				"/reconcile-storage/c.txt",
+				"!/reconcile-storage/b.txt",
+				"!/reconcile-storage/a.txt",
 			},
+			want: sreconcile.ResultSuccess,
 		},
-		{
-			name: "garbage collection fails with context timeout",
-			beforeFunc: func(obj *sourcev1.Bucket, storage *Storage) error {
-				revisions := []string{"a", "b", "c", "d"}
-				for n := range revisions {
-					v := revisions[n]
-					obj.Status.Artifact = &sourcev1.Artifact{
-						Path:     fmt.Sprintf("/garbage-collect/%s.txt", v),
-						Revision: v,
-					}
-					if err := testStorage.MkdirAll(*obj.Status.Artifact); err != nil {
-						return err
-					}
-					if err := testStorage.AtomicWriteFile(obj.Status.Artifact, strings.NewReader(v), 0644); err != nil {
-						return err
-					}
-				}
-				testStorage.SetArtifactURL(obj.Status.Artifact)
-				return nil
-			},
-			ctxTimeout:  time.Second * 1,
-			wantErr:     "context deadline exceeded",
-			assertPaths: []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			g := NewWithT(t)
-
-			defer func() {
-				g.Expect(os.RemoveAll(filepath.Join(testStorage.BasePath, "/garbage-collect"))).To(Succeed())
-			}()
-
-			r := &BucketReconciler{
-				EventRecorder: record.NewFakeRecorder(32),
-				Storage:       testStorage,
-			}
-
-			obj := &sourcev1.Bucket{
-				ObjectMeta: metav1.ObjectMeta{
-					GenerateName: "test-",
-				},
-			}
-			if tt.beforeFunc != nil {
-				g.Expect(tt.beforeFunc(obj, testStorage)).To(Succeed())
-			}
-			ctx := context.TODO()
-			var cancel context.CancelFunc
-			if tt.ctxTimeout > 0 {
-				ctx, cancel = context.WithTimeout(ctx, tt.ctxTimeout)
-				defer cancel()
-				time.Sleep(tt.ctxTimeout * 2)
-			}
-			err := r.garbageCollect(ctx, obj)
-			if tt.wantErr != "" {
-				g.Expect(err).ToNot(BeNil())
-				g.Expect(err.Error()).To(ContainSubstring(tt.wantErr))
-			} else {
-				g.Expect(err).To(BeNil())
-			}
-
-			for _, p := range tt.assertPaths {
-				absoluteP := filepath.Join(testStorage.BasePath, p)
-				if !strings.HasPrefix(p, "!") {
-					g.Expect(absoluteP).To(BeAnExistingFile())
-					continue
-				}
-				g.Expect(absoluteP).NotTo(BeAnExistingFile())
-			}
-		})
-	}
-
-}
-
-func TestBucketReconciler_reconcileStorage(t *testing.T) {
-	tests := []struct {
-		name             string
-		beforeFunc       func(obj *sourcev1.Bucket, storage *Storage) error
-		want             sreconcile.Result
-		wantErr          bool
-		assertArtifact   *sourcev1.Artifact
-		assertConditions []metav1.Condition
-		assertPaths      []string
-	}{
 		{
 			name: "notices missing artifact in storage",
 			beforeFunc: func(obj *sourcev1.Bucket, storage *Storage) error {
