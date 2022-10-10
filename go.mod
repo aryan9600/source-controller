@@ -15,6 +15,8 @@ replace github.com/libgit2/git2go/v33 => github.com/fluxcd/git2go/v33 v33.0.9-fl
 // Fix CVE-2022-1996 (for v2, Go Modules incompatible)
 replace github.com/emicklei/go-restful => github.com/emicklei/go-restful v2.16.0+incompatible
 
+replace github.com/go-git/go-git => github.com/aryan9600/go-git v0.0.0-20221010195313-c9cc596946fd
+
 require (
 	cloud.google.com/go/storage v1.27.0
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.1.3
