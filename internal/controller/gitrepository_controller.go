@@ -646,6 +646,13 @@ func (r *GitRepositoryReconciler) getAuthOpts(ctx context.Context, obj *sourcev1
 	if err != nil {
 		return nil, err
 	}
+
+	// `git.NewAuthOptions()` populates the CA cert data by checking for the `caFile` key.
+	// Since, `ca.crt` takes precedence, check for its presence here and override the CA
+	// certificate, if found.
+	if ca, ok := authData["ca.crt"]; ok {
+		authOpts.CAFile = ca
+	}
 	return authOpts, nil
 }
 
