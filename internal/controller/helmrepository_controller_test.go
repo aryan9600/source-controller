@@ -434,7 +434,7 @@ func TestHelmRepositoryReconciler_reconcileSource(t *testing.T) {
 					Name: "ca-file",
 				},
 				Data: map[string][]byte{
-					"caFile": tlsCA,
+					"ca.crt": tlsCA,
 				},
 			},
 			beforeFunc: func(t *WithT, obj *helmv1.HelmRepository, rev digest.Digest) {
@@ -502,7 +502,7 @@ func TestHelmRepositoryReconciler_reconcileSource(t *testing.T) {
 					Name: "invalid-ca",
 				},
 				Data: map[string][]byte{
-					"caFile": []byte("invalid"),
+					"ca.crt": []byte("invalid"),
 				},
 			},
 			beforeFunc: func(t *WithT, obj *helmv1.HelmRepository, rev digest.Digest) {
@@ -512,7 +512,7 @@ func TestHelmRepositoryReconciler_reconcileSource(t *testing.T) {
 			},
 			wantErr: true,
 			assertConditions: []metav1.Condition{
-				*conditions.TrueCondition(sourcev1.FetchFailedCondition, sourcev1.AuthenticationFailedReason, "cannot append certificate into certificate pool: invalid caFile"),
+				*conditions.TrueCondition(sourcev1.FetchFailedCondition, sourcev1.AuthenticationFailedReason, "cannot append certificate into certificate pool: invalid CA certificate"),
 				*conditions.TrueCondition(meta.ReconcilingCondition, meta.ProgressingReason, "foo"),
 				*conditions.UnknownCondition(meta.ReadyCondition, "foo", "bar"),
 			},
@@ -769,7 +769,7 @@ func TestHelmRepositoryReconciler_reconcileSource(t *testing.T) {
 				if tt.url != "" {
 					repoURL = tt.url
 				}
-				tlsConf, _, serr = getter.TLSClientConfigFromSecret(*secret, repoURL)
+				tlsConf, _, serr = getter.TLSClientConfigFromSecret(*secret, repoURL, true)
 				if serr != nil {
 					validSecret = false
 				}

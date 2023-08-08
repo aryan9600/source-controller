@@ -58,7 +58,7 @@ func TestGetClientOpts(t *testing.T) {
 					Name: "ca-file",
 				},
 				Data: map[string][]byte{
-					"caFile": tlsCA,
+					"ca.crt": tlsCA,
 				},
 			},
 			authSecret: &corev1.Secret{
@@ -161,20 +161,24 @@ func TestGetClientOpts(t *testing.T) {
 }
 
 func Test_tlsClientConfigFromSecret(t *testing.T) {
-	tlsSecretFixture := validTlsSecret(t)
+	kubernetesTlsSecretFixture := validTlsSecret(t, true)
+	tlsSecretFixture := validTlsSecret(t, false)
 
 	tests := []struct {
 		name    string
 		secret  corev1.Secret
 		modify  func(secret *corev1.Secret)
+		tlsKeys bool
 		wantErr bool
 		wantNil bool
 	}{
-		{"certFile, keyFile and caFile", tlsSecretFixture, nil, false, false},
-		{"without certFile", tlsSecretFixture, func(s *corev1.Secret) { delete(s.Data, "certFile") }, true, true},
-		{"without keyFile", tlsSecretFixture, func(s *corev1.Secret) { delete(s.Data, "keyFile") }, true, true},
-		{"without caFile", tlsSecretFixture, func(s *corev1.Secret) { delete(s.Data, "caFile") }, false, false},
-		{"empty", corev1.Secret{}, nil, false, true},
+		{"tls.crt, tls.key and ca.crt", kubernetesTlsSecretFixture, nil, true, false, false},
+		{"certFile, keyFile and caFile", tlsSecretFixture, nil, false, false, false},
+		{"without tls.crt", kubernetesTlsSecretFixture, func(s *corev1.Secret) { delete(s.Data, "tls.crt") }, true, true, true},
+		{"without tls.key", kubernetesTlsSecretFixture, func(s *corev1.Secret) { delete(s.Data, "tls.key") }, true, true, true},
+		{"without ca.crt", kubernetesTlsSecretFixture, func(s *corev1.Secret) { delete(s.Data, "ca.crt") }, true, false, false},
+		{"empty", corev1.Secret{}, nil, true, false, true},
+		{"invalid secret type", corev1.Secret{Type: corev1.SecretTypeBasicAuth}, nil, false, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -183,7 +187,7 @@ func Test_tlsClientConfigFromSecret(t *testing.T) {
 				tt.modify(secret)
 			}
 
-			got, _, err := TLSClientConfigFromSecret(*secret, "")
+			got, _, err := TLSClientConfigFromSecret(*secret, "", tt.tlsKeys)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("TLSClientConfigFromSecret() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -215,7 +219,7 @@ func TestGetClientOpts_registryTLSLoginOption(t *testing.T) {
 					Name: "ca-file",
 				},
 				Data: map[string][]byte{
-					"caFile": tlsCA,
+					"ca.crt": tlsCA,
 				},
 			},
 			authSecret: &corev1.Secret{
@@ -310,7 +314,7 @@ func TestGetClientOpts_registryTLSLoginOption(t *testing.T) {
 
 // validTlsSecret creates a secret containing key pair and CA certificate that are
 // valid from a syntax (minimum requirements) perspective.
-func validTlsSecret(t *testing.T) corev1.Secret {
+func validTlsSecret(t *testing.T, kubernetesTlsKeys bool) corev1.Secret {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal("Private key cannot be created.", err.Error())
@@ -356,11 +360,19 @@ func validTlsSecret(t *testing.T) corev1.Secret {
 		Bytes: caBytes,
 	})
 
+	crtKey := "tls.crt"
+	pkKey := "tls.key"
+	caKey := "ca.crt"
+	if !kubernetesTlsKeys {
+		crtKey = "certFile"
+		pkKey = "keyFile"
+		caKey = "caFile"
+	}
 	return corev1.Secret{
 		Data: map[string][]byte{
-			"certFile": []byte(certPem),
-			"keyFile":  []byte(keyPem),
-			"caFile":   []byte(caPem),
+			crtKey: []byte(certPem),
+			pkKey:  []byte(keyPem),
+			caKey:  []byte(caPem),
 		},
 	}
 }

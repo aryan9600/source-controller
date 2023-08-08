@@ -2368,11 +2368,11 @@ func TestHelmChartReconciler_reconcileSourceFromOCI_authStrategy(t *testing.T) {
 					Name: "certs-secretref",
 				},
 				Data: map[string][]byte{
-					"caFile": []byte("invalid caFile"),
+					"ca.crt": []byte("invalid caFile"),
 				},
 			},
 			assertConditions: []metav1.Condition{
-				*conditions.TrueCondition(sourcev1.FetchFailedCondition, "Unknown", "unknown build error: failed to construct Helm client's TLS config: cannot append certificate into certificate pool: invalid caFile"),
+				*conditions.TrueCondition(sourcev1.FetchFailedCondition, "Unknown", "unknown build error: failed to construct Helm client's TLS config: cannot append certificate into certificate pool: invalid CA certificate"),
 			},
 		},
 		{
@@ -2398,9 +2398,9 @@ func TestHelmChartReconciler_reconcileSourceFromOCI_authStrategy(t *testing.T) {
 					Name: "certs-secretref",
 				},
 				Data: map[string][]byte{
-					"caFile":   tlsCA,
-					"certFile": clientPublicKey,
-					"keyFile":  clientPrivateKey,
+					"ca.crt":  tlsCA,
+					"tls.crt": clientPublicKey,
+					"tls.key": clientPrivateKey,
 				},
 			},
 			assertConditions: []metav1.Condition{

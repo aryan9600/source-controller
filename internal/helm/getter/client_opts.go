@@ -43,6 +43,7 @@ const (
 	certFileName = "cert.pem"
 	keyFileName  = "key.pem"
 	caFileName   = "ca.pem"
+	caCertKey    = "ca.crt"
 )
 
 var ErrDeprecatedTLSConfig = errors.New("TLS configured in a deprecated manner")
@@ -105,7 +106,7 @@ func GetClientOpts(ctx context.Context, c client.Client, obj *helmv1.HelmReposit
 			return nil, "", fmt.Errorf("failed to get TLS authentication secret '%s/%s': %w", obj.GetNamespace(), obj.Spec.CertSecretRef.Name, err)
 		}
 
-		hrOpts.TlsConfig, tlsBytes, err = TLSClientConfigFromSecret(*certSecret, url)
+		hrOpts.TlsConfig, tlsBytes, err = TLSClientConfigFromSecret(*certSecret, url, true)
 		if err != nil {
 			return nil, "", fmt.Errorf("failed to construct Helm client's TLS config: %w", err)
 		}
@@ -129,7 +130,7 @@ func GetClientOpts(ctx context.Context, c client.Client, obj *helmv1.HelmReposit
 		// If the TLS config is nil, i.e. one couldn't be constructed using `.spec.certSecretRef`
 		// then try to use `.spec.secretRef`.
 		if hrOpts.TlsConfig == nil {
-			hrOpts.TlsConfig, tlsBytes, err = TLSClientConfigFromSecret(*authSecret, url)
+			hrOpts.TlsConfig, tlsBytes, err = TLSClientConfigFromSecret(*authSecret, url, false)
 			if err != nil {
 				return nil, "", fmt.Errorf("failed to construct Helm client's TLS config: %w", err)
 			}
@@ -199,17 +200,40 @@ func fetchSecret(ctx context.Context, c client.Client, name, namespace string) (
 }
 
 // TLSClientConfigFromSecret attempts to construct a TLS client config
-// for the given v1.Secret. It returns the TLS client config or an error.
+// for the given Secret. It returns the TLS client config or an error.
 //
-// Secrets with no certFile, keyFile, AND caFile are ignored, if only a
-// certBytes OR keyBytes is defined it returns an error.
-func TLSClientConfigFromSecret(secret corev1.Secret, repositoryUrl string) (*tls.Config, *TLSBytes, error) {
-	certBytes, keyBytes, caBytes := secret.Data["certFile"], secret.Data["keyFile"], secret.Data["caFile"]
+// kubernetesTLSKeys is a boolean indicating whether to check the Secret
+// for keys expected to be present in a Kubernetes TLS Secret. Based on its
+// value, the Secret is checked for the following keys:
+// - tls.key/keyFile for the private key
+// - tls.crt/certFile for the certificate
+// - ca.crt/caFile for the CA certificate
+// The keys should adhere to a single convention, i.e. a Secret with tls.key
+// and certFile is invalid.
+// Secrets with no certificate, private key, AND CA cert are ignored. If only a
+// certificate OR private key is found, an error is returned.
+func TLSClientConfigFromSecret(secret corev1.Secret, repositoryUrl string, kubernetesTLSKeys bool) (*tls.Config, *TLSBytes, error) {
+	// Only Secrets of type Opaque and TLS are allowed. We also allow Secrets with a blank
+	// type, to avoid having to specify the type of the Secret for every test case.
+	// Since a real Kubernetes Secret is of type Opaque by default, its safe to allow this.
+	switch secret.Type {
+	case corev1.SecretTypeOpaque, corev1.SecretTypeTLS, "":
+	default:
+		return nil, nil, fmt.Errorf("cannot use secret '%s' to construct TLS config: invalid secret type: '%s'", secret.Name, secret.Type)
+	}
+
+	var certBytes, keyBytes, caBytes []byte
+	if kubernetesTLSKeys {
+		certBytes, keyBytes, caBytes = secret.Data[corev1.TLSCertKey], secret.Data[corev1.TLSPrivateKeyKey], secret.Data[caCertKey]
+	} else {
+		certBytes, keyBytes, caBytes = secret.Data["certFile"], secret.Data["keyFile"], secret.Data["caFile"]
+	}
+
 	switch {
 	case len(certBytes)+len(keyBytes)+len(caBytes) == 0:
 		return nil, nil, nil
 	case (len(certBytes) > 0 && len(keyBytes) == 0) || (len(keyBytes) > 0 && len(certBytes) == 0):
-		return nil, nil, fmt.Errorf("invalid '%s' secret data: fields 'certFile' and 'keyFile' require each other's presence",
+		return nil, nil, fmt.Errorf("invalid '%s' secret data: both certificate and private key need to be provided",
 			secret.Name)
 	}
 
@@ -228,20 +252,20 @@ func TLSClientConfigFromSecret(secret corev1.Secret, repositoryUrl string) (*tls
 			return nil, nil, fmt.Errorf("cannot retrieve system certificate pool: %w", err)
 		}
 		if !cp.AppendCertsFromPEM(caBytes) {
-			return nil, nil, fmt.Errorf("cannot append certificate into certificate pool: invalid caFile")
+			return nil, nil, fmt.Errorf("cannot append certificate into certificate pool: invalid CA certificate")
 		}
 
 		tlsConf.RootCAs = cp
 	}
 
-	tlsConf.BuildNameToCertificate()
+	if repositoryUrl != "" {
+		u, err := url.Parse(repositoryUrl)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot parse repository URL: %w", err)
+		}
 
-	u, err := url.Parse(repositoryUrl)
-	if err != nil {
-		return nil, nil, fmt.Errorf("cannot parse repository URL: %w", err)
+		tlsConf.ServerName = u.Hostname()
 	}
-
-	tlsConf.ServerName = u.Hostname()
 
 	return tlsConf, &TLSBytes{
 		CertBytes: certBytes,
