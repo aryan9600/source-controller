@@ -551,6 +551,38 @@ func TestHelmRepositoryReconciler_reconcileSource(t *testing.T) {
 			},
 		},
 		{
+			// Regression test for: https://github.com/fluxcd/source-controller/issues/1218
+			name:     "HTTP with docker config secretRef sets Reconciling=True",
+			protocol: "http",
+			server: options{
+				username: "git",
+				password: "1234",
+			},
+			secret: &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "basic-auth",
+				},
+				Data: map[string][]byte{
+					"username": []byte("git"),
+					"password": []byte("1234"),
+				},
+				Type: corev1.SecretTypeDockerConfigJson,
+			},
+			beforeFunc: func(t *WithT, obj *helmv1.HelmRepository, rev digest.Digest) {
+				obj.Spec.SecretRef = &meta.LocalObjectReference{Name: "basic-auth"}
+			},
+			want: sreconcile.ResultSuccess,
+			assertConditions: []metav1.Condition{
+				*conditions.TrueCondition(meta.ReconcilingCondition, meta.ProgressingReason, "building artifact: new index revision"),
+				*conditions.UnknownCondition(meta.ReadyCondition, meta.ProgressingReason, "building artifact: new index revision"),
+			},
+			afterFunc: func(t *WithT, obj *helmv1.HelmRepository, artifact sourcev1.Artifact, chartRepo *repository.ChartRepository) {
+				t.Expect(chartRepo.Path).ToNot(BeEmpty())
+				t.Expect(chartRepo.Index).ToNot(BeNil())
+				t.Expect(artifact.Revision).ToNot(BeEmpty())
+			},
+		},
+		{
 			name:     "HTTPS with invalid CAFile in certSecretRef makes FetchFailed=True and returns error",
 			protocol: "https",
 			server: options{
